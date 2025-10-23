@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Sort and Filter Trial</title>
+  <title>Filterable Questions Viewer</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="wrap">
     <header>
-      <h1>Sort and Filter Trial</h1>
+      <h1>Filterable Questions Viewer</h1>
       <span class="pill" title="Data source">Supabase REST → questions_long</span>
     </header>
 
@@ -39,7 +39,7 @@
         </label>
         <label class="full">
           <span>Keyword</span>
-          <input id="search" type="text" placeholder="Search across all columns…" />
+          <input id="search" type="text" placeholder="Search across all columns… (question, section, subsection, CARE, tribes, #)" />
         </label>
         <button id="apply">Apply</button>
       </div>
@@ -55,8 +55,8 @@
             <th style="width:72px">#</th>
             <th style="width:28%">Section / Subsection</th>
             <th>Question</th>
-            <th style="width:90px">CARE</th>
-            <th style="width:160px">Yes (n / m)</th>
+            <th style="width:110px">CARE</th>
+            <th style="width:170px">Yes (n / m)</th>
             <th style="width:220px">Tribes (YES)</th>
           </tr>
         </thead>
@@ -66,8 +66,8 @@
   </div>
 
   <script>
-    // ====== CONFIG ======
-    const SUPABASE_URL = "https://hkqhdfpafsclurftgjdo.supabase.co"; // your project URL
+    // ====== CONFIG (your real project + anon key) ======
+    const SUPABASE_URL = "https://hkqhdfpafsclurftgjdo.supabase.co";
     const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrcWhkZnBhZnNjbHVyZnRnamRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNjkxNjYsImV4cCI6MjA3Njc0NTE2Nn0.9K-IAMcDEDDuS7ok1ZsXEa2AbaA7TT7_nCGUf8CpF08";
 
     // ====== HELPERS ======
@@ -79,35 +79,51 @@
           apikey: ANON_KEY,
           Authorization: `Bearer ${ANON_KEY}`,
           Prefer: "count=exact",
-          Range: "0-999",
-        },
+          Range: "0-999"
+        }
       });
     }
     function option(el, value, text) {
       const o = document.createElement('option');
-      o.value = value; o.textContent = text ?? value; el.appendChild(o);
+      o.value = value;
+      o.textContent = text ?? value;
+      el.appendChild(o);
     }
-
-    // helper: does a comma-separated CARE string contain the token?
+    // Does a comma-separated CARE string contain the token?
     function careIncludes(value, token) {
-      if (!token) return true;              // no filter selected
+      if (!token) return true;
       if (!value) return false;
       const set = value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
       return set.includes(token.toUpperCase());
     }
 
-    // ====== LOAD FILTER VALUES (from VIEW) ======
+    // ====== LOAD FILTER VALUES (from VIEW, with fallback) ======
     async function loadSections() {
-      const res = await api('/rest/v1/questions_long', {
+      let res = await api('/rest/v1/questions_long', {
         select: 'section',
         distinct: 'true',
         order: 'section.asc'
       });
-      if (!res.ok) { console.error(await res.text()); return; }
+      if (!res.ok) {
+        console.error('loadSections view error:', await res.text());
+        res = await api('/rest/v1/questions', {
+          select: 'section',
+          distinct: 'true',
+          order: 'section.asc'
+        });
+      }
+      if (!res.ok) { console.error('loadSections table error:', await res.text()); return; }
+
       const data = await res.json();
       const section = document.getElementById('section');
       section.innerHTML = '<option value="">All</option>';
-      data.filter(r => r.section).forEach(r => option(section, r.section, r.section));
+      const seen = new Set();
+      for (const r of data) {
+        const val = r.section?.trim();
+        if (!val || seen.has(val)) continue;
+        seen.add(val);
+        option(section, val, val);
+      }
     }
 
     async function loadSubsections() {
@@ -115,12 +131,27 @@
       const params = selSection
         ? { select: 'subsection', distinct: 'true', order: 'subsection.asc', section: `eq.${selSection}` }
         : { select: 'subsection', distinct: 'true', order: 'subsection.asc' };
-      const res = await api('/rest/v1/questions_long', params);
-      if (!res.ok) { console.error(await res.text()); return; }
+
+      let res = await api('/rest/v1/questions_long', params);
+      if (!res.ok) {
+        console.error('loadSubsections view error:', await res.text());
+        const paramsTbl = selSection
+          ? { select: 'subsection', distinct: 'true', order: 'subsection.asc', section: `eq.${selSection}` }
+          : { select: 'subsection', distinct: 'true', order: 'subsection.asc' };
+        res = await api('/rest/v1/questions', paramsTbl);
+      }
+      if (!res.ok) { console.error('loadSubsections table error:', await res.text()); return; }
+
       const data = await res.json();
       const subsection = document.getElementById('subsection');
       subsection.innerHTML = '<option value="">All</option>';
-      data.filter(r => r.subsection).forEach(r => option(subsection, r.subsection, r.subsection));
+      const seen = new Set();
+      for (const r of data) {
+        const val = r.subsection?.trim();
+        if (!val || seen.has(val)) continue;
+        seen.add(val);
+        option(subsection, val, val);
+      }
     }
 
     // ====== LOAD + AGGREGATE TABLE ======
@@ -130,19 +161,27 @@
       const subsection = document.getElementById('subsection').value;
       const q = document.getElementById('search').value.trim();
 
-      // Pull all tribe rows; aggregate to yes/total client-side
+      // We fetch all tribe rows (not just TRUE) then aggregate client-side
       const params = {
         select: 'question_number,section,subsection,question_text,care_principal,answer,tribe_code',
-        order: 'question_number.asc',
+        order: 'question_number.asc'
       };
-
       if (section) params.section = `eq.${section}`;
       if (subsection) params.subsection = `eq.${subsection}`;
 
-      // Keyword search across multiple columns (OR)
+      // Keyword search across multiple columns, including CARE full words
       if (q) {
-        const cleaned = q.replace(/[%*]/g, '');        // avoid wildcard injection
+        const cleaned = q.replace(/[%*]/g, '').trim();
         const term = `*${cleaned}*`;
+        const lc = cleaned.toLowerCase();
+
+        // If they typed full words, also map to CARE letters to widen matches
+        const careTerms = [];
+        if (lc.includes('collect')) careTerms.push('C');     // collective benefit
+        if (lc.includes('author'))   careTerms.push('A');     // authority to control
+        if (lc.includes('respons'))  careTerms.push('R');     // responsibility
+        if (lc.includes('ethic'))    careTerms.push('E');     // ethics
+
         const ors = [
           `question_text.ilike.${term}`,
           `section.ilike.${term}`,
@@ -150,20 +189,17 @@
           `care_principal.ilike.${term}`,
           `tribe_code.ilike.${term}`
         ];
-        if (/^\d+$/.test(cleaned)) {
-          ors.push(`question_number.eq.${cleaned}`);
-        }
+        for (const c of careTerms) ors.push(`care_principal.ilike.*${c}*`);
+        if (/^\d+$/.test(cleaned)) ors.push(`question_number.eq.${cleaned}`);
+
         params.or = `(${ors.join(",")})`;
       }
 
       const res = await api('/rest/v1/questions_long', params);
-      if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(msg);
-      }
+      if (!res.ok) { throw new Error(await res.text()); }
       const data = await res.json();
 
-      // Aggregate to one row per question: yes / total + list YES tribes; filter CARE token here (supports combos like "C,A")
+      // Aggregate to one row per question: yes / total + tribes with YES; filter CARE token (supports combos like "C,A")
       const byQ = new Map();
       for (const r of data) {
         if (!careIncludes(r.care_principal, care)) continue;
@@ -191,29 +227,27 @@
       }
 
       const rowsAgg = Array.from(byQ.values()).sort((a,b) =>
-        (a.question_number||0) - (b.question_number||0)
+        (a.question_number || 0) - (b.question_number || 0)
       );
 
       document.getElementById('count').textContent = `${rowsAgg.length} question(s)`;
       renderRowsAggregated(rowsAgg);
     }
 
+    // ====== RENDER ======
     function renderRowsAggregated(rows) {
       const tbody = document.getElementById('rows');
       if (!rows.length) {
         tbody.innerHTML = "<tr><td colspan='6'>No results</td></tr>";
         return;
       }
-    
-      // CARE mapping
+
       const careMap = {
         C: "Collective Benefit",
         A: "Authority to Control",
         R: "Responsibility",
         E: "Ethics"
       };
-    
-      // Tribe letter mapping
       const tribeMap = {
         tribe_a: "A",
         tribe_b: "B",
@@ -221,28 +255,27 @@
         tribe_d: "D",
         tribe_e: "E"
       };
-    
+
       tbody.innerHTML = rows.map(r => {
-        const percent = r.total > 0 ? ((r.yes / r.total) * 100).toFixed(1) : 0;
-    
         // Expand CARE abbreviations, including combos like "C,A,R"
-        let careExpanded = "";
-        if (r.care_principal) {
-          careExpanded = r.care_principal
-            .split(',')
-            .map(c => careMap[c.trim()] || c)
-            .join(', ');
-        }
-    
+        const careExpanded = r.care_principal
+          ? r.care_principal.split(',')
+              .map(c => careMap[c.trim()] || c)
+              .join(', ')
+          : '<span class="meta">—</span>';
+
+        // Compute percentage
+        const percent = r.total > 0 ? ((r.yes / r.total) * 100).toFixed(1) : 0;
+
         // Map tribe codes to letters (A,B,C,D,E)
         const tribes = r.yesTribes?.length
-          ? r.yesTribes
+          ? Array.from(new Set(r.yesTribes))
               .map(t => tribeMap[t.toLowerCase()] || t)
               .sort()
               .map(t => `<span class="tag">${t}</span>`)
               .join(' ')
           : '<span class="meta">—</span>';
-    
+
         return `
           <tr>
             <td>${r.question_number}</td>
@@ -251,14 +284,13 @@
               <div class="meta">${r.subsection || ''}</div>
             </td>
             <td>${r.question_text}</td>
-            <td>${careExpanded || '<span class="meta">—</span>'}</td>
+            <td>${careExpanded}</td>
             <td>${r.yes} / ${r.total || 0} <span class="meta">(${percent}%)</span></td>
             <td>${tribes}</td>
           </tr>
         `;
       }).join('');
     }
-
 
     // ====== WIRE UI ======
     document.getElementById('apply').addEventListener('click', fetchQuestions);
