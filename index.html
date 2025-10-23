@@ -3,113 +3,187 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Questions by Tribe</title>
-  <style>
-    body{font-family:system-ui,arial,sans-serif;max-width:900px;margin:32px auto;padding:0 16px}
-    header{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    select,input,button{padding:8px 10px;font-size:14px}
-    table{width:100%;border-collapse:collapse;margin-top:16px}
-    th,td{border:1px solid #ddd;padding:8px;vertical-align:top}
-    th{background:#f5f5f5;text-align:left}
-    .count{opacity:.7}
-  </style>
+  <title>Filterable Questions Viewer</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header>
-    <label>Tribe:
-      <select id="tribe">
-        <option value="tribe_a">tribe_a</option>
-        <option value="tribe_b">tribe_b</option>
-        <option value="tribe_c">tribe_c</option>
-        <option value="tribe_d">tribe_d</option>
-        <option value="tribe_e">tribe_e</option>
-      </select>
-    </label>
-    <input id="search" placeholder="Search question text…" />
-    <button id="refresh">Load</button>
-    <span class="count" id="count"></span>
-  </header>
+  <div class="wrap">
+    <header>
+      <h1>Filterable Questions Viewer</h1>
+      <span class="pill" title="Data source">Supabase REST → questions + questions_long</span>
+    </header>
 
-  <table>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Section / Subsection</th>
-        <th>Question</th>
-      </tr>
-    </thead>
-    <tbody id="rows"></tbody>
-  </table>
+    <section class="card">
+      <div class="filters">
+        <label>
+          <span>Tribe</span>
+          <select id="tribe">
+            <option value="tribe_a">tribe_a</option>
+            <option value="tribe_b">tribe_b</option>
+            <option value="tribe_c">tribe_c</option>
+            <option value="tribe_d">tribe_d</option>
+            <option value="tribe_e">tribe_e</option>
+          </select>
+        </label>
+        <label>
+          <span>CARE</span>
+          <select id="care">
+            <option value="">All</option>
+            <option value="C">C — Collective Benefit</option>
+            <option value="A">A — Authority to Control</option>
+            <option value="R">R — Responsibility</option>
+            <option value="E">E — Ethics</option>
+          </select>
+        </label>
+        <label>
+          <span>Section</span>
+          <select id="section">
+            <option value="">All</option>
+          </select>
+        </label>
+        <label>
+          <span>Subsection</span>
+          <select id="subsection">
+            <option value="">All</option>
+          </select>
+        </label>
+        <label class="full">
+          <span>Keyword</span>
+          <input id="search" type="text" placeholder="Search question text…" />
+        </label>
+        <label class="checkbox">
+          <input id="onlyTrue" type="checkbox" checked /> Only TRUE for selected tribe
+        </label>
+        <button id="apply">Apply</button>
+      </div>
+      <div class="controls">
+        <span class="right" id="count"> </span>
+      </div>
+    </section>
+
+    <section class="card row">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:72px">#</th>
+            <th style="width:28%">Section / Subsection</th>
+            <th>Question</th>
+            <th style="width:110px">Tribe</th>
+            <th style="width:80px">Answer</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+  </div>
 
   <script>
-    const SUPABASE_URL = "https://hkqhdfpafsclurftgjdo.supabase.co";
-    const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrcWhkZnBhZnNjbHVyZnRnamRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNjkxNjYsImV4cCI6MjA3Njc0NTE2Nn0.9K-IAMcDEDDuS7ok1ZsXEa2AbaA7TT7_nCGUf8CpF08";
+    // ====== CONFIG ======
+    const SUPABASE_URL = "YOUR_PROJECT_URL"; // e.g., https://abc123.supabase.co
+    const ANON_KEY = "YOUR_ANON_KEY";
 
-    async function fetchQuestions(tribeCode, queryText) {
-      const params = new URLSearchParams({
-        select: "question_number,section,subsection,question_text,tribe_code,answer",
-        "tribe_code": `eq.${tribeCode}`,
-        "answer": "is.true",
-        "order": "question_number.asc"
-      });
-
-      // If searching, add an ilike filter on question_text
-      if (queryText && queryText.trim().length > 0) {
-        // PostgREST filter: question_text ilike *term*
-        params.append("question_text", `ilike.*${queryText.trim()}*`);
-      }
-
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/questions_long?${params.toString()}`, {
+    // ====== HELPERS ======
+    function api(path, params = {}) {
+      const url = new URL(`${SUPABASE_URL}${path}`);
+      Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+      return fetch(url.toString(), {
         headers: {
           apikey: ANON_KEY,
           Authorization: `Bearer ${ANON_KEY}`,
           Prefer: "count=exact",
-          Range: "0-499"
-        }
+          Range: "0-999",
+        },
       });
-
-      if (!res.ok) {
-        const msg = await res.text();
-        throw new Error(`Request failed: ${res.status} ${msg}`);
-      }
-
-      const data = await res.json();
-      const total = res.headers.get("content-range")?.split("/")?.[1] ?? data.length;
-      return { data, total };
     }
 
-    function renderRows(items) {
-      const tbody = document.getElementById("rows");
-      tbody.innerHTML = items.map(r => `
+    function option(el, value, text) {
+      const o = document.createElement('option');
+      o.value = value; o.textContent = text ?? value; el.appendChild(o);
+    }
+
+    // ====== LOAD FILTER VALUES (distinct section/subsection) ======
+    async function loadSections() {
+      const res = await api('/rest/v1/questions', {
+        select: 'section', distinct: 'true', order: 'section.asc'
+      });
+      const data = await res.json();
+      const section = document.getElementById('section');
+      section.innerHTML = '<option value="">All</option>';
+      data.filter(r => r.section).forEach(r => option(section, r.section, r.section));
+    }
+
+    async function loadSubsections() {
+      const selSection = document.getElementById('section').value;
+      const params = selSection
+        ? { select: 'subsection', distinct: 'true', order: 'subsection.asc', section: `eq.${selSection}` }
+        : { select: 'subsection', distinct: 'true', order: 'subsection.asc' };
+      const res = await api('/rest/v1/questions', params);
+      const data = await res.json();
+      const subsection = document.getElementById('subsection');
+      subsection.innerHTML = '<option value="">All</option>';
+      data.filter(r => r.subsection).forEach(r => option(subsection, r.subsection, r.subsection));
+    }
+
+    // ====== LOAD TABLE ======
+    async function fetchQuestions() {
+      const tribe = document.getElementById('tribe').value;
+      const care = document.getElementById('care').value;
+      const section = document.getElementById('section').value;
+      const subsection = document.getElementById('subsection').value;
+      const q = document.getElementById('search').value.trim();
+      const onlyTrue = document.getElementById('onlyTrue').checked;
+
+      const params = {
+        select: 'question_number,section,subsection,question_text,tribe_code,answer,care_principal',
+        order: 'question_number.asc',
+        tribe_code: `eq.${tribe}`,
+      };
+      if (onlyTrue) params.answer = 'is.true';
+      if (care) params.care_principal = `eq.${care}`;
+      if (section) params.section = `eq.${section}`;
+      if (subsection) params.subsection = `eq.${subsection}`;
+      if (q) params.question_text = `ilike.*${q}*`;
+
+      const res = await api('/rest/v1/questions_long', params);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const total = res.headers.get('content-range')?.split('/')?.[1] ?? data.length;
+      document.getElementById('count').textContent = `${total} match(es)`;
+      renderRows(data);
+    }
+
+    function renderRows(rows) {
+      const tbody = document.getElementById('rows');
+      if (!rows.length) {
+        tbody.innerHTML = "<tr><td colspan='5'>No results</td></tr>";
+        return;
+      }
+      tbody.innerHTML = rows.map(r => `
         <tr>
           <td>${r.question_number}</td>
-          <td><strong>${r.section}</strong><br>${r.subsection ?? ""}</td>
+          <td><div><strong>${r.section || ''}</strong></div><div class="meta">${r.subsection || ''}</div></td>
           <td>${r.question_text}</td>
+          <td>${r.tribe_code}</td>
+          <td>${r.answer === true ? 'TRUE' : (r.answer === false ? 'FALSE' : 'NULL')}</td>
         </tr>
-      `).join("");
+      `).join('');
     }
 
-    async function load() {
-      const tribeCode = document.getElementById("tribe").value;
-      const q = document.getElementById("search").value;
-      document.getElementById("rows").innerHTML = "<tr><td colspan='3'>Loading…</td></tr>";
-      try {
-        const { data, total } = await fetchQuestions(tribeCode, q);
-        renderRows(data);
-        document.getElementById("count").textContent = `${total} match(es)`;
-      } catch (e) {
-        document.getElementById("rows").innerHTML = `<tr><td colspan='3' style="color:#b00">${e.message}</td></tr>`;
-        document.getElementById("count").textContent = "";
-      }
-    }
+    // ====== WIRE UI ======
+    document.getElementById('apply').addEventListener('click', fetchQuestions);
+    document.getElementById('section').addEventListener('change', async () => { await loadSubsections(); await fetchQuestions(); });
+    document.getElementById('subsection').addEventListener('change', fetchQuestions);
+    document.getElementById('tribe').addEventListener('change', fetchQuestions);
+    document.getElementById('care').addEventListener('change', fetchQuestions);
+    document.getElementById('search').addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchQuestions(); });
+    document.getElementById('onlyTrue').addEventListener('change', fetchQuestions);
 
-    document.getElementById("refresh").addEventListener("click", load);
-    document.getElementById("tribe").addEventListener("change", load);
-    document.getElementById("search").addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
-
-    // initial load
-    load();
+    // ====== INIT ======
+    (async function init(){
+      await loadSections();
+      await loadSubsections();
+      await fetchQuestions();
+    })();
   </script>
 </body>
 </html>
-
