@@ -204,11 +204,45 @@
         tbody.innerHTML = "<tr><td colspan='6'>No results</td></tr>";
         return;
       }
+    
+      // CARE mapping
+      const careMap = {
+        C: "Collective Benefit",
+        A: "Authority to Control",
+        R: "Responsibility",
+        E: "Ethics"
+      };
+    
+      // Tribe letter mapping
+      const tribeMap = {
+        tribe_a: "A",
+        tribe_b: "B",
+        tribe_c: "C",
+        tribe_d: "D",
+        tribe_e: "E"
+      };
+    
       tbody.innerHTML = rows.map(r => {
         const percent = r.total > 0 ? ((r.yes / r.total) * 100).toFixed(1) : 0;
+    
+        // Expand CARE abbreviations, including combos like "C,A,R"
+        let careExpanded = "";
+        if (r.care_principal) {
+          careExpanded = r.care_principal
+            .split(',')
+            .map(c => careMap[c.trim()] || c)
+            .join(', ');
+        }
+    
+        // Map tribe codes to letters (A,B,C,D,E)
         const tribes = r.yesTribes?.length
-          ? r.yesTribes.sort().map(t => `<span class="tag">${t}</span>`).join(' ')
+          ? r.yesTribes
+              .map(t => tribeMap[t.toLowerCase()] || t)
+              .sort()
+              .map(t => `<span class="tag">${t}</span>`)
+              .join(' ')
           : '<span class="meta">—</span>';
+    
         return `
           <tr>
             <td>${r.question_number}</td>
@@ -217,13 +251,14 @@
               <div class="meta">${r.subsection || ''}</div>
             </td>
             <td>${r.question_text}</td>
-            <td>${r.care_principal || '<span class="meta">—</span>'}</td>
+            <td>${careExpanded || '<span class="meta">—</span>'}</td>
             <td>${r.yes} / ${r.total || 0} <span class="meta">(${percent}%)</span></td>
             <td>${tribes}</td>
           </tr>
         `;
       }).join('');
     }
+
 
     // ====== WIRE UI ======
     document.getElementById('apply').addEventListener('click', fetchQuestions);
