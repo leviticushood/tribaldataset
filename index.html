@@ -16,16 +16,6 @@
     <section class="card">
       <div class="filters">
         <label>
-          <span>Tribe</span>
-          <select id="tribe">
-            <option value="tribe_a">tribe_a</option>
-            <option value="tribe_b">tribe_b</option>
-            <option value="tribe_c">tribe_c</option>
-            <option value="tribe_d">tribe_d</option>
-            <option value="tribe_e">tribe_e</option>
-          </select>
-        </label>
-        <label>
           <span>CARE</span>
           <select id="care">
             <option value="">All</option>
@@ -52,7 +42,7 @@
           <input id="search" type="text" placeholder="Search question text…" />
         </label>
         <label class="checkbox">
-          <input id="onlyTrue" type="checkbox" checked /> Only TRUE for selected tribe
+          <input id="onlyTrue" type="checkbox" checked /> Only TRUE 
         </label>
         <button id="apply">Apply</button>
       </div>
@@ -126,7 +116,6 @@
 
     // ====== LOAD TABLE ======
     async function fetchQuestions() {
-      const tribe = document.getElementById('tribe').value;
       const care = document.getElementById('care').value;
       const section = document.getElementById('section').value;
       const subsection = document.getElementById('subsection').value;
@@ -134,9 +123,8 @@
       const onlyTrue = document.getElementById('onlyTrue').checked;
 
       const params = {
-        select: 'question_number,section,subsection,question_text,tribe_code,answer,care_principal',
+        select: 'question_number,section,subsection,question_text,answer,care_principal',
         order: 'question_number.asc',
-        tribe_code: `eq.${tribe}`,
       };
       if (onlyTrue) params.answer = 'is.true';
       if (care) params.care_principal = `eq.${care}`;
@@ -173,7 +161,6 @@
     document.getElementById('apply').addEventListener('click', fetchQuestions);
     document.getElementById('section').addEventListener('change', async () => { await loadSubsections(); await fetchQuestions(); });
     document.getElementById('subsection').addEventListener('change', fetchQuestions);
-    document.getElementById('tribe').addEventListener('change', fetchQuestions);
     document.getElementById('care').addEventListener('change', fetchQuestions);
     document.getElementById('search').addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchQuestions(); });
     document.getElementById('onlyTrue').addEventListener('change', fetchQuestions);
