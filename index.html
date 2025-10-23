@@ -1,1 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Questions by Tribe</title>
+  <style>
+    body{font-family:system-ui,arial,sans-serif;max-width:900px;margin:32px auto;padding:0 16px}
+    header{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    select,input,button{padding:8px 10px;font-size:14px}
+    table{width:100%;border-collapse:collapse;margin-top:16px}
+    th,td{border:1px solid #ddd;padding:8px;vertical-align:top}
+    th{background:#f5f5f5;text-align:left}
+    .count{opacity:.7}
+  </style>
+</head>
+<body>
+  <header>
+    <label>Tribe:
+      <select id="tribe">
+        <option value="tribe_a">tribe_a</option>
+        <option value="tribe_b">tribe_b</option>
+        <option value="tribe_c">tribe_c</option>
+        <option value="tribe_d">tribe_d</option>
+        <option value="tribe_e">tribe_e</option>
+      </select>
+    </label>
+    <input id="search" placeholder="Search question text…" />
+    <button id="refresh">Load</button>
+    <span class="count" id="count"></span>
+  </header>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Section / Subsection</th>
+        <th>Question</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <script>
+    const SUPABASE_URL = "https://hkqhdfpafsclurftgjdo.supabase.co";
+    const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrcWhkZnBhZnNjbHVyZnRnamRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNjkxNjYsImV4cCI6MjA3Njc0NTE2Nn0.9K-IAMcDEDDuS7ok1ZsXEa2AbaA7TT7_nCGUf8CpF08";
+
+    async function fetchQuestions(tribeCode, queryText) {
+      const params = new URLSearchParams({
+        select: "question_number,section,subsection,question_text,tribe_code,answer",
+        "tribe_code": `eq.${tribeCode}`,
+        "answer": "is.true",
+        "order": "question_number.asc"
+      });
+
+      // If searching, add an ilike filter on question_text
+      if (queryText && queryText.trim().length > 0) {
+        // PostgREST filter: question_text ilike *term*
+        params.append("question_text", `ilike.*${queryText.trim()}*`);
+      }
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/questions_long?${params.toString()}`, {
+        headers: {
+          apikey: ANON_KEY,
+          Authorization: `Bearer ${ANON_KEY}`,
+          Prefer: "count=exact",
+          Range: "0-499"
+        }
+      });
+
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(`Request failed: ${res.status} ${msg}`);
+      }
+
+      const data = await res.json();
+      const total = res.headers.get("content-range")?.split("/")?.[1] ?? data.length;
+      return { data, total };
+    }
+
+    function renderRows(items) {
+      const tbody = document.getElementById("rows");
+      tbody.innerHTML = items.map(r => `
+        <tr>
+          <td>${r.question_number}</td>
+          <td><strong>${r.section}</strong><br>${r.subsection ?? ""}</td>
+          <td>${r.question_text}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function load() {
+      const tribeCode = document.getElementById("tribe").value;
+      const q = document.getElementById("search").value;
+      document.getElementById("rows").innerHTML = "<tr><td colspan='3'>Loading…</td></tr>";
+      try {
+        const { data, total } = await fetchQuestions(tribeCode, q);
+        renderRows(data);
+        document.getElementById("count").textContent = `${total} match(es)`;
+      } catch (e) {
+        document.getElementById("rows").innerHTML = `<tr><td colspan='3' style="color:#b00">${e.message}</td></tr>`;
+        document.getElementById("count").textContent = "";
+      }
+    }
+
+    document.getElementById("refresh").addEventListener("click", load);
+    document.getElementById("tribe").addEventListener("change", load);
+    document.getElementById("search").addEventListener("keydown", (e) => { if (e.key === "Enter") load(); });
+
+    // initial load
+    load();
+  </script>
+</body>
+</html>
 
