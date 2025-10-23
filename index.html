@@ -130,7 +130,24 @@
       if (care) params.care_principal = `eq.${care}`;
       if (section) params.section = `eq.${section}`;
       if (subsection) params.subsection = `eq.${subsection}`;
-      if (q) params.question_text = `ilike.*${q}*`;
+      // NEW: search across multiple columns (OR)
+      // includes question_text, section, subsection, care_principal, tribe_code
+      // and matches question_number if the query is a pure number
+      if (q) {
+        const cleaned = q.replace(/[%*]/g, '');          // avoid wildcards injection
+        const term = `*${cleaned}*`;
+        const ors = [
+          `question_text.ilike.${term}`,
+          `section.ilike.${term}`,
+          `subsection.ilike.${term}`,
+          `care_principal.ilike.${term}`,
+          `tribe_code.ilike.${term}`
+        ];
+        if (/^\\d+$/.test(cleaned)) {
+          ors.push(`question_number.eq.${cleaned}`);
+        }
+        params.or = `(${ors.join(",")})`;
+      }
 
       const res = await api('/rest/v1/questions_long', params);
       if (!res.ok) throw new Error(await res.text());
