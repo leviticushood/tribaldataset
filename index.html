@@ -10,7 +10,7 @@
   <div class="wrap">
     <header>
       <h1>Filterable Questions Viewer</h1>
-      <span class="pill" title="Data source">Supabase REST → questions + questions_long</span>
+      <span class="pill" title="Data source">Supabase REST → questions_long</span>
     </header>
 
     <section class="card">
@@ -39,10 +39,7 @@
         </label>
         <label class="full">
           <span>Keyword</span>
-          <input id="search" type="text" placeholder="Search question text…" />
-        </label>
-        <label class="checkbox">
-          <input id="onlyTrue" type="checkbox" checked /> Only TRUE 
+          <input id="search" type="text" placeholder="Search across all columns…" />
         </label>
         <button id="apply">Apply</button>
       </div>
@@ -58,7 +55,7 @@
             <th style="width:72px">#</th>
             <th style="width:28%">Section / Subsection</th>
             <th>Question</th>
-            <th style="width:120px">Yes (n / m)</th>
+            <th style="width:140px">Yes (n / m)</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -68,7 +65,7 @@
 
   <script>
     // ====== CONFIG ======
-    const SUPABASE_URL = "https://hkqhdfpafsclurftgjdo.supabase.co"; // e.g., https://abc123.supabase.co
+    const SUPABASE_URL = "https://hkqhdfpafsclurftgjdo.supabase.co"; // your project URL
     const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrcWhkZnBhZnNjbHVyZnRnamRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNjkxNjYsImV4cCI6MjA3Njc0NTE2Nn0.9K-IAMcDEDDuS7ok1ZsXEa2AbaA7TT7_nCGUf8CpF08";
 
     // ====== HELPERS ======
@@ -84,17 +81,19 @@
         },
       });
     }
-
     function option(el, value, text) {
       const o = document.createElement('option');
       o.value = value; o.textContent = text ?? value; el.appendChild(o);
     }
 
-    // ====== LOAD FILTER VALUES (distinct section/subsection) ======
+    // ====== LOAD FILTER VALUES (distinct section/subsection from the VIEW) ======
     async function loadSections() {
-      const res = await api('/rest/v1/questions', {
-        select: 'section', distinct: 'true', order: 'section.asc'
+      const res = await api('/rest/v1/questions_long', {
+        select: 'section',
+        distinct: 'true',
+        order: 'section.asc'
       });
+      if (!res.ok) { console.error(await res.text()); return; }
       const data = await res.json();
       const section = document.getElementById('section');
       section.innerHTML = '<option value="">All</option>';
@@ -106,7 +105,6 @@
       const params = selSection
         ? { select: 'subsection', distinct: 'true', order: 'subsection.asc', section: `eq.${selSection}` }
         : { select: 'subsection', distinct: 'true', order: 'subsection.asc' };
-    
       const res = await api('/rest/v1/questions_long', params);
       if (!res.ok) { console.error(await res.text()); return; }
       const data = await res.json();
@@ -115,28 +113,26 @@
       data.filter(r => r.subsection).forEach(r => option(subsection, r.subsection, r.subsection));
     }
 
-
-    // ====== LOAD TABLE ======
+    // ====== LOAD + AGGREGATE TABLE ======
     async function fetchQuestions() {
       const care = document.getElementById('care').value;
       const section = document.getElementById('section').value;
       const subsection = document.getElementById('subsection').value;
       const q = document.getElementById('search').value.trim();
-      const onlyTrue = document.getElementById('onlyTrue').checked;
 
+      // Pull all tribe rows; aggregate to yes/total client-side
       const params = {
-        select: 'question_number,section,subsection,question_text,answer,care_principal',
-        order: 'question_number.asc',
+        select: 'question_number,section,subsection,question_text,care_principal,answer,tribe_code',
+        order: 'care_principal.asc,section.asc,subsection.asc,question_number.asc',
       };
-      if (onlyTrue) params.answer = 'is.true';
+
       if (care) params.care_principal = `eq.${care}`;
       if (section) params.section = `eq.${section}`;
       if (subsection) params.subsection = `eq.${subsection}`;
-      // NEW: search across multiple columns (OR)
-      // includes question_text, section, subsection, care_principal, tribe_code
-      // and matches question_number if the query is a pure number
+
+      // Keyword search across multiple columns (OR)
       if (q) {
-        const cleaned = q.replace(/[%*]/g, '');          // avoid wildcards injection
+        const cleaned = q.replace(/[%*]/g, '');        // avoid wildcard injection
         const term = `*${cleaned}*`;
         const ors = [
           `question_text.ilike.${term}`,
@@ -145,33 +141,64 @@
           `care_principal.ilike.${term}`,
           `tribe_code.ilike.${term}`
         ];
-        if (/^\\d+$/.test(cleaned)) {
+        if (/^\d+$/.test(cleaned)) {
           ors.push(`question_number.eq.${cleaned}`);
         }
         params.or = `(${ors.join(",")})`;
       }
 
       const res = await api('/rest/v1/questions_long', params);
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg);
+      }
       const data = await res.json();
-      const total = res.headers.get('content-range')?.split('/')?.[1] ?? data.length;
-      document.getElementById('count').textContent = `${total} match(es)`;
-      renderRows(data);
+
+      // Aggregate to one row per question: yes / total (ignores NULLs)
+      const byQ = new Map();
+      for (const r of data) {
+        const key = r.question_number;
+        if (!byQ.has(key)) {
+          byQ.set(key, {
+            question_number: r.question_number,
+            section: r.section,
+            subsection: r.subsection,
+            question_text: r.question_text,
+            care_principal: r.care_principal,
+            yes: 0,
+            total: 0
+          });
+        }
+        if (r.answer === true) byQ.get(key).yes += 1;
+        if (r.answer === true || r.answer === false) byQ.get(key).total += 1;
+      }
+
+      const rowsAgg = Array.from(byQ.values()).sort((a,b) =>
+        (a.care_principal||'').localeCompare(b.care_principal||'') ||
+        (a.section||'').localeCompare(b.section||'') ||
+        (a.subsection||'').localeCompare(b.subsection||'') ||
+        (a.question_number||0) - (b.question_number||0)
+      );
+
+      document.getElementById('count').textContent = `${rowsAgg.length} question(s)`;
+      renderRowsAggregated(rowsAgg);
     }
 
-    function renderRows(rows) {
+    function renderRowsAggregated(rows) {
       const tbody = document.getElementById('rows');
       if (!rows.length) {
-        tbody.innerHTML = "<tr><td colspan='5'>No results</td></tr>";
+        tbody.innerHTML = "<tr><td colspan='4'>No results</td></tr>";
         return;
       }
       tbody.innerHTML = rows.map(r => `
         <tr>
           <td>${r.question_number}</td>
-          <td><div><strong>${r.section || ''}</strong></div><div class="meta">${r.subsection || ''}</div></td>
+          <td>
+            <div><strong>${r.section || ''}</strong></div>
+            <div class="meta">${r.subsection || ''}</div>
+          </td>
           <td>${r.question_text}</td>
-          <td>${r.tribe_code}</td>
-          <td>${r.answer === true ? 'TRUE' : (r.answer === false ? 'FALSE' : 'NULL')}</td>
+          <td>${r.yes} / ${r.total || 0}</td>
         </tr>
       `).join('');
     }
