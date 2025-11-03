@@ -195,16 +195,19 @@ td:nth-child(5) {
 
 
 .label {
-  display: block;
-  margin: 4px auto;
+  display: inline-block;
+  margin: 4px 4px 4px 0;
   padding: 5px 10px;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 500;
-  width: fit-content;
+  line-height: 1.3;
   background: rgba(255, 255, 255, 0.04);
   text-align: center;
+  white-space: nowrap;        /* 🔒 prevents word splits */
+  word-break: keep-all;       /* 🔒 keeps phrases intact */
 }
+
 
 .label.care {
   background: rgba(122, 162, 247, 0.12);
