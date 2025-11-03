@@ -237,14 +237,14 @@
           ? r.care_principal
               .split(',')
               .map(c => `<span class="label care">${careMap[c.trim()] || c}</span>`)
-              .join('')
+              .join(' ')
           : '<span class="meta">—</span>';
 
         const undripExpanded = r.undrip
           ? r.undrip
               .split(',')
               .map(u => `<span class="label undrip">${undripMap[u.trim()] || u}</span>`)
-              .join('')
+              .join(' ')
           : '<span class="meta">—</span>';
 
         const percent = r.total > 0 ? ((r.yes / r.total) * 100).toFixed(1) : 0;
