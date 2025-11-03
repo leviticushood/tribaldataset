@@ -265,8 +265,8 @@
               <div class="meta">${r.subsection || ''}</div>
             </td>
             <td>${r.question_text}</td>
-            <td>${careExpanded}</td>
-            <td>${undripExpanded}</td>
+            <td class="care-cell"><div class="labels">${careExpanded}</div></td>
+            <td class="undrip-cell"><div class="labels">${undripExpanded}</div></td>
             <td class="yes-cell">
               <div class="yes-fraction">${r.yes} / ${r.total || 0}</div>
               <div class="yes-percent meta">${percent}%</div>
