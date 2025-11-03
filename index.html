@@ -267,7 +267,10 @@
             <td>${r.question_text}</td>
             <td>${careExpanded}</td>
             <td>${undripExpanded}</td>
-            <td>${r.yes} / ${r.total || 0} <span class="meta">(${percent}%)</span></td>
+            <td class="yes-cell">
+              <div class="yes-fraction">${r.yes} / ${r.total || 0}</div>
+              <div class="yes-percent meta">${percent}%</div>
+            </td>
             <td>${tribes}</td>
           </tr>
         `;
