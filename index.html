@@ -3,8 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Trial Tribal Dataset v1.1</title>
+  <title>Trial Tribal Dataset v1.2</title>
   <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Ensure CARE and UNDRIP text wrap cleanly */
+    td.wrap {
+      white-space: normal;
+      word-wrap: break-word;
+      line-height: 1.3;
+    }
+  </style>
 </head>
 <body>
   <div class="wrap">
@@ -37,34 +45,15 @@
         </label>
 
         <label>
-          <span>Section</span>
-          <select id="section">
-            <option value="">All</option>
-          </select>
-        </label>
-
-        <label>
-          <span>Subsection</span>
-          <select id="subsection">
-            <option value="">All</option>
-          </select>
-        </label>
-
-        <label>
           <span>Tribe</span>
           <select id="tribe">
-            <option value="">All</option>
-            <option value="tribe_a">A</option>
-            <option value="tribe_b">B</option>
-            <option value="tribe_c">C</option>
-            <option value="tribe_d">D</option>
-            <option value="tribe_e">E</option>
+            <option value="">All (with YES)</option>
           </select>
         </label>
 
         <label class="full">
           <span>Keyword</span>
-          <input id="search" type="text" placeholder="Search across all columns… (question, section, subsection, CARE, UNDRIP, tribes, #)" />
+          <input id="search" type="text" placeholder="Search across all columns… (question, CARE, UNDRIP, tribes, #)" />
         </label>
 
         <button id="apply">Apply</button>
@@ -80,7 +69,7 @@
         <thead>
           <tr>
             <th style="width:72px">#</th>
-            <th style="width:22%">Section / Subsection</th>
+            <th style="width:25%">Section / Subsection</th>
             <th>Question</th>
             <th style="width:110px">CARE</th>
             <th style="width:150px">UNDRIP</th>
@@ -126,49 +115,37 @@
       return set.includes(token.toUpperCase());
     }
 
-    // ====== LOAD FILTER VALUES ======
-    async function loadSections() {
-      let res = await api('/rest/v1/questions_long', {
-        select: 'section',
+    // ====== LOAD TRIBE DROPDOWN (only YES answers) ======
+    async function loadTribesWithYes() {
+      const res = await api('/rest/v1/questions_long', {
+        select: 'tribe_code',
         distinct: 'true',
-        order: 'section.asc'
+        answer: 'eq.true'
       });
-      if (!res.ok) res = await api('/rest/v1/questions', { select: 'section', distinct: 'true', order: 'section.asc' });
-      if (!res.ok) return console.error(await res.text());
-
-      const data = await res.json();
-      const section = document.getElementById('section');
-      section.innerHTML = '<option value="">All</option>';
-      const seen = new Set();
-      for (const r of data) {
-        const val = r.section?.trim();
-        if (val && !seen.has(val)) {
-          seen.add(val);
-          option(section, val, val);
-        }
+      if (!res.ok) {
+        console.error('loadTribesWithYes error:', await res.text());
+        return;
       }
-    }
-
-    async function loadSubsections() {
-      const selSection = document.getElementById('section').value;
-      const params = selSection
-        ? { select: 'subsection', distinct: 'true', order: 'subsection.asc', section: `eq.${selSection}` }
-        : { select: 'subsection', distinct: 'true', order: 'subsection.asc' };
-
-      let res = await api('/rest/v1/questions_long', params);
-      if (!res.ok) res = await api('/rest/v1/questions', params);
-      if (!res.ok) return console.error(await res.text());
 
       const data = await res.json();
-      const subsection = document.getElementById('subsection');
-      subsection.innerHTML = '<option value="">All</option>';
+      const tribeSelect = document.getElementById('tribe');
+      tribeSelect.innerHTML = '<option value="">All (with YES)</option>';
       const seen = new Set();
+
+      const tribeMap = {
+        tribe_a: "A",
+        tribe_b: "B",
+        tribe_c: "C",
+        tribe_d: "D",
+        tribe_e: "E"
+      };
+
       for (const r of data) {
-        const val = r.subsection?.trim();
-        if (val && !seen.has(val)) {
-          seen.add(val);
-          option(subsection, val, val);
-        }
+        const val = r.tribe_code?.trim();
+        if (!val || seen.has(val)) continue;
+        seen.add(val);
+        const label = tribeMap[val.toLowerCase()] || val;
+        option(tribeSelect, val, label);
       }
     }
 
@@ -176,8 +153,6 @@
     async function fetchQuestions() {
       const care = document.getElementById('care').value;
       const undrip = document.getElementById('undrip').value;
-      const section = document.getElementById('section').value;
-      const subsection = document.getElementById('subsection').value;
       const tribe = document.getElementById('tribe').value;
       const q = document.getElementById('search').value.trim();
 
@@ -185,8 +160,6 @@
         select: 'question_number,section,subsection,question_text,care_principal,undrip,answer,tribe_code',
         order: 'question_number.asc'
       };
-      if (section) params.section = `eq.${section}`;
-      if (subsection) params.subsection = `eq.${subsection}`;
 
       // Search filter
       if (q) {
@@ -208,7 +181,6 @@
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
 
-      // Aggregate + filter
       const byQ = new Map();
       for (const r of data) {
         if (!includesToken(r.care_principal, care)) continue;
@@ -270,11 +242,11 @@
 
       tbody.innerHTML = rows.map(r => {
         const careExpanded = r.care_principal
-          ? r.care_principal.split(',').map(c => careMap[c.trim()] || c).join(', ')
+          ? r.care_principal.split(',').map(c => careMap[c.trim()] || c).join('<br>')
           : '<span class="meta">—</span>';
 
         const undripExpanded = r.undrip
-          ? r.undrip.split(',').map(u => undripMap[u.trim()] || u).join(', ')
+          ? r.undrip.split(',').map(u => undripMap[u.trim()] || u).join('<br>')
           : '<span class="meta">—</span>';
 
         const percent = r.total > 0 ? ((r.yes / r.total) * 100).toFixed(1) : 0;
@@ -295,8 +267,8 @@
               <div class="meta">${r.subsection || ''}</div>
             </td>
             <td>${r.question_text}</td>
-            <td>${careExpanded}</td>
-            <td>${undripExpanded}</td>
+            <td class="wrap">${careExpanded}</td>
+            <td class="wrap">${undripExpanded}</td>
             <td>${r.yes} / ${r.total || 0} <span class="meta">(${percent}%)</span></td>
             <td>${tribes}</td>
           </tr>
@@ -306,8 +278,6 @@
 
     // ====== WIRE UI ======
     document.getElementById('apply').addEventListener('click', fetchQuestions);
-    document.getElementById('section').addEventListener('change', async () => { await loadSubsections(); await fetchQuestions(); });
-    document.getElementById('subsection').addEventListener('change', fetchQuestions);
     document.getElementById('care').addEventListener('change', fetchQuestions);
     document.getElementById('undrip').addEventListener('change', fetchQuestions);
     document.getElementById('tribe').addEventListener('change', fetchQuestions);
@@ -315,8 +285,7 @@
 
     // ====== INIT ======
     (async function init(){
-      await loadSections();
-      await loadSubsections();
+      await loadTribesWithYes();
       await fetchQuestions();
     })();
   </script>
