@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Trial Tribal Dataset v1.0</title>
+  <title>Trial Tribal Dataset v1.1</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -25,6 +25,7 @@
             <option value="E">E — Ethics</option>
           </select>
         </label>
+
         <label>
           <span>UNDRIP</span>
           <select id="undrip">
@@ -34,298 +35,24 @@
             <option value="E">E — External Participation</option>
           </select>
         </label>
+
         <label>
           <span>Section</span>
           <select id="section">
             <option value="">All</option>
           </select>
         </label>
+
         <label>
           <span>Subsection</span>
           <select id="subsection">
             <option value="">All</option>
           </select>
         </label>
+
         <label>
           <span>Tribe</span>
           <select id="tribe">
             <option value="">All</option>
             <option value="tribe_a">A</option>
-            <option value="tribe_b">B</option>
-            <option value="tribe_c">C</option>
-            <option value="tribe_d">D</option>
-            <option value="tribe_e">E</option>
-          </select>
-        </label>
-        <label class="full">
-          <span>Keyword</span>
-          <input id="search" type="text" placeholder="Search across all columns… (question, section, subsection, CARE, tribes, #)" />
-        </label>
-        <button id="apply">Apply</button>
-      </div>
-      <div class="controls">
-        <span class="right" id="count"> </span>
-      </div>
-    </section>
-
-    <section class="card row">
-      <table>
-        <thead>
-          <tr>
-            <th style="width:72px">#</th>
-            <th style="width:28%">Section / Subsection</th>
-            <th>Question</th>
-            <th style="width:110px">CARE</th>
-            <th style="width:150px">UNDRIP</th>
-            <th style="width:170px">Yes</th>
-            <th style="width:220px">Tribes (YES)</th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-    </section>
-  </div>
-
-  <script>
-    // ====== CONFIG (your real project + anon key) ======
-    const SUPABASE_URL = "https://hkqhdfpafsclurftgjdo.supabase.co";
-    const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrcWhkZnBhZnNjbHVyZnRnamRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNjkxNjYsImV4cCI6MjA3Njc0NTE2Nn0.9K-IAMcDEDDuS7ok1ZsXEa2AbaA7TT7_nCGUf8CpF08";
-
-    // ====== HELPERS ======
-    function api(path, params = {}) {
-      const url = new URL(`${SUPABASE_URL}${path}`);
-      Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-      return fetch(url.toString(), {
-        headers: {
-          apikey: ANON_KEY,
-          Authorization: `Bearer ${ANON_KEY}`,
-          Prefer: "count=exact",
-          Range: "0-999"
-        }
-      });
-    }
-    function option(el, value, text) {
-      const o = document.createElement('option');
-      o.value = value;
-      o.textContent = text ?? value;
-      el.appendChild(o);
-    }
-    // Does a comma-separated CARE string contain the token?
-    function careIncludes(value, token) {
-      if (!token) return true;
-      if (!value) return false;
-      const set = value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-      return set.includes(token.toUpperCase());
-    }
-
-    // ====== LOAD FILTER VALUES (from VIEW, with fallback) ======
-    async function loadSections() {
-      let res = await api('/rest/v1/questions_long', {
-        select: 'section',
-        distinct: 'true',
-        order: 'section.asc'
-      });
-      if (!res.ok) {
-        console.error('loadSections view error:', await res.text());
-        res = await api('/rest/v1/questions', {
-          select: 'section',
-          distinct: 'true',
-          order: 'section.asc'
-        });
-      }
-      if (!res.ok) { console.error('loadSections table error:', await res.text()); return; }
-
-      const data = await res.json();
-      const section = document.getElementById('section');
-      section.innerHTML = '<option value="">All</option>';
-      const seen = new Set();
-      for (const r of data) {
-        const val = r.section?.trim();
-        if (!val || seen.has(val)) continue;
-        seen.add(val);
-        option(section, val, val);
-      }
-    }
-
-    async function loadSubsections() {
-      const selSection = document.getElementById('section').value;
-      const params = selSection
-        ? { select: 'subsection', distinct: 'true', order: 'subsection.asc', section: `eq.${selSection}` }
-        : { select: 'subsection', distinct: 'true', order: 'subsection.asc' };
-
-      let res = await api('/rest/v1/questions_long', params);
-      if (!res.ok) {
-        console.error('loadSubsections view error:', await res.text());
-        const paramsTbl = selSection
-          ? { select: 'subsection', distinct: 'true', order: 'subsection.asc', section: `eq.${selSection}` }
-          : { select: 'subsection', distinct: 'true', order: 'subsection.asc' };
-        res = await api('/rest/v1/questions', paramsTbl);
-      }
-      if (!res.ok) { console.error('loadSubsections table error:', await res.text()); return; }
-
-      const data = await res.json();
-      const subsection = document.getElementById('subsection');
-      subsection.innerHTML = '<option value="">All</option>';
-      const seen = new Set();
-      for (const r of data) {
-        const val = r.subsection?.trim();
-        if (!val || seen.has(val)) continue;
-        seen.add(val);
-        option(subsection, val, val);
-      }
-    }
-
-    // ====== LOAD + AGGREGATE TABLE ======
-    async function fetchQuestions() {
-      const care = document.getElementById('care').value;
-      const section = document.getElementById('section').value;
-      const subsection = document.getElementById('subsection').value;
-      const q = document.getElementById('search').value.trim();
-
-      // We fetch all tribe rows (not just TRUE) then aggregate client-side
-      const params = {
-        select: 'question_number,section,subsection,question_text,care_principal,answer,tribe_code',
-        order: 'question_number.asc'
-      };
-      if (section) params.section = `eq.${section}`;
-      if (subsection) params.subsection = `eq.${subsection}`;
-
-      // Keyword search across multiple columns, including CARE full words
-      if (q) {
-        const cleaned = q.replace(/[%*]/g, '').trim();
-        const term = `*${cleaned}*`;
-        const lc = cleaned.toLowerCase();
-
-        // If they typed full words, also map to CARE letters to widen matches
-        const careTerms = [];
-        if (lc.includes('collect')) careTerms.push('C');     // collective benefit
-        if (lc.includes('author'))   careTerms.push('A');     // authority to control
-        if (lc.includes('respons'))  careTerms.push('R');     // responsibility
-        if (lc.includes('ethic'))    careTerms.push('E');     // ethics
-
-        const ors = [
-          `question_text.ilike.${term}`,
-          `section.ilike.${term}`,
-          `subsection.ilike.${term}`,
-          `care_principal.ilike.${term}`,
-          `tribe_code.ilike.${term}`
-        ];
-        for (const c of careTerms) ors.push(`care_principal.ilike.*${c}*`);
-        if (/^\d+$/.test(cleaned)) ors.push(`question_number.eq.${cleaned}`);
-
-        params.or = `(${ors.join(",")})`;
-      }
-
-      const res = await api('/rest/v1/questions_long', params);
-      if (!res.ok) { throw new Error(await res.text()); }
-      const data = await res.json();
-
-      // Aggregate to one row per question: yes / total + tribes with YES; filter CARE token (supports combos like "C,A")
-      const byQ = new Map();
-      for (const r of data) {
-        if (!careIncludes(r.care_principal, care)) continue;
-
-        const key = r.question_number;
-        if (!byQ.has(key)) {
-          byQ.set(key, {
-            question_number: r.question_number,
-            section: r.section,
-            subsection: r.subsection,
-            question_text: r.question_text,
-            care_principal: r.care_principal,
-            yes: 0,
-            total: 0,
-            yesTribes: []
-          });
-        }
-        if (r.answer === true) {
-          byQ.get(key).yes += 1;
-          if (r.tribe_code) byQ.get(key).yesTribes.push(r.tribe_code);
-        }
-        if (r.answer === true || r.answer === false) {
-          byQ.get(key).total += 1;
-        }
-      }
-
-      const rowsAgg = Array.from(byQ.values()).sort((a,b) =>
-        (a.question_number || 0) - (b.question_number || 0)
-      );
-
-      document.getElementById('count').textContent = `${rowsAgg.length} question(s)`;
-      renderRowsAggregated(rowsAgg);
-    }
-
-    // ====== RENDER ======
-    function renderRowsAggregated(rows) {
-      const tbody = document.getElementById('rows');
-      if (!rows.length) {
-        tbody.innerHTML = "<tr><td colspan='6'>No results</td></tr>";
-        return;
-      }
-
-      const careMap = {
-        C: "Collective Benefit",
-        A: "Authority to Control",
-        R: "Responsibility",
-        E: "Ethics"
-      };
-      const tribeMap = {
-        tribe_a: "A",
-        tribe_b: "B",
-        tribe_c: "C",
-        tribe_d: "D",
-        tribe_e: "E"
-      };
-
-      tbody.innerHTML = rows.map(r => {
-        // Expand CARE abbreviations, including combos like "C,A,R"
-        const careExpanded = r.care_principal
-          ? r.care_principal.split(',')
-              .map(c => careMap[c.trim()] || c)
-              .join(', ')
-          : '<span class="meta">—</span>';
-
-        // Compute percentage
-        const percent = r.total > 0 ? ((r.yes / r.total) * 100).toFixed(1) : 0;
-
-        // Map tribe codes to letters (A,B,C,D,E)
-        const tribes = r.yesTribes?.length
-          ? Array.from(new Set(r.yesTribes))
-              .map(t => tribeMap[t.toLowerCase()] || t)
-              .sort()
-              .map(t => `<span class="tag">${t}</span>`)
-              .join(' ')
-          : '<span class="meta">—</span>';
-
-        return `
-          <tr>
-            <td>${r.question_number}</td>
-            <td>
-              <div><strong>${r.section || ''}</strong></div>
-              <div class="meta">${r.subsection || ''}</div>
-            </td>
-            <td>${r.question_text}</td>
-            <td>${careExpanded}</td>
-            <td>${r.yes} / ${r.total || 0} <span class="meta">(${percent}%)</span></td>
-            <td>${tribes}</td>
-          </tr>
-        `;
-      }).join('');
-    }
-
-    // ====== WIRE UI ======
-    document.getElementById('apply').addEventListener('click', fetchQuestions);
-    document.getElementById('section').addEventListener('change', async () => { await loadSubsections(); await fetchQuestions(); });
-    document.getElementById('subsection').addEventListener('change', fetchQuestions);
-    document.getElementById('care').addEventListener('change', fetchQuestions);
-    document.getElementById('search').addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchQuestions(); });
-
-    // ====== INIT ======
-    (async function init(){
-      await loadSections();
-      await loadSubsections();
-      await fetchQuestions();
-    })();
-  </script>
-</body>
-</html>
+            <option value="tri
