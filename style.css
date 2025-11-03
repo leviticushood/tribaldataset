@@ -186,12 +186,13 @@ td:nth-child(3) {
 td:nth-child(4),
 td:nth-child(5) {
   white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
+  word-break: keep-all;        /* keep words whole */
+  overflow-wrap: normal;       /* prevent mid-word breaks */
   text-align: center;
   vertical-align: top;
   line-height: 1.5;
 }
+
 
 .label {
   display: block;
