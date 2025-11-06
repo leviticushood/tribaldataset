@@ -221,3 +221,29 @@ td:nth-child(7){ white-space:normal; text-align:left; vertical-align:top; }
   th,td{ padding:10px 10px; }
   header h1{ font-size:18px; }
 }
+
+/* =========================
+   Layering Fix (Filters + Table)
+   ========================= */
+
+/* Make sure filter card always appears above table */
+.filters, .card.filters {
+  position: relative;
+  z-index: 5;
+  overflow: visible; /* prevent dropdowns from being cut off */
+}
+
+/* Ensure table container respects stacking context */
+table {
+  position: relative;
+  z-index: 1;
+}
+
+/* Keep sticky header above rows but below filters */
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3; /* bump above rows */
+  background: rgba(18, 23, 32, 0.95);
+  backdrop-filter: saturate(120%) blur(6px);
+}
