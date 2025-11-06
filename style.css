@@ -247,3 +247,37 @@ thead th {
   background: rgba(18, 23, 32, 0.95);
   backdrop-filter: saturate(120%) blur(6px);
 }
+
+/* =========================
+   Justifications Section
+   ========================= */
+details.just-details {
+  margin-top: 6px;
+}
+
+details.just-details summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: var(--fs-1);
+  font-weight: 600;
+}
+
+details.just-details[open] summary {
+  color: var(--accent-2);
+}
+
+details.just-details .justification {
+  margin-top: 6px;
+  padding-left: 6px;
+  border-left: 2px solid var(--border);
+  font-size: var(--fs-1);
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+details.just-details .justification strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
