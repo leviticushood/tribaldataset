@@ -3,14 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Trial Tribal Dataset v1.3</title>
+  <title>Trial Tribal Dataset v1.4</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="wrap">
     <header>
       <h1>Trial Tribal Dataset</h1>
-      <!--<span class="pill" title="Data source">text</span>-->
     </header>
 
     <section class="card">
@@ -66,7 +65,7 @@
             <th style="width:10%">CARE</th>
             <th style="width:10%">UNDRIP</th>
             <th style="width:7%">Yes</th>
-            <th style="width:8%">Tribes (YES)</th>
+            <th style="width:8%">Tribes / Justifications</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -75,11 +74,9 @@
   </div>
 
   <script>
-    // ====== CONFIG ======
     const SUPABASE_URL = "https://hkqhdfpafsclurftgjdo.supabase.co";
     const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhrcWhkZnBhZnNjbHVyZnRnamRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNjkxNjYsImV4cCI6MjA3Njc0NTE2Nn0.9K-IAMcDEDDuS7ok1ZsXEa2AbaA7TT7_nCGUf8CpF08";
 
-    // ====== HELPERS ======
     function api(path, params = {}) {
       const url = new URL(`${SUPABASE_URL}${path}`);
       Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
@@ -107,31 +104,17 @@
       return set.includes(token.toUpperCase());
     }
 
-    // ====== LOAD TRIBE DROPDOWN (only tribes with YES answers) ======
     async function loadTribesWithYes() {
       const res = await api('/rest/v1/questions_long', {
         select: 'tribe_code',
         distinct: 'true',
         answer: 'eq.true'
       });
-      if (!res.ok) {
-        console.error('loadTribesWithYes error:', await res.text());
-        return;
-      }
-
       const data = await res.json();
       const tribeSelect = document.getElementById('tribe');
       tribeSelect.innerHTML = '<option value="">All (with YES)</option>';
       const seen = new Set();
-
-      const tribeMap = {
-        tribe_a: "A",
-        tribe_b: "B",
-        tribe_c: "C",
-        tribe_d: "D",
-        tribe_e: "E"
-      };
-
+      const tribeMap = { tribe_a: "A", tribe_b: "B", tribe_c: "C", tribe_d: "D", tribe_e: "E" };
       for (const r of data) {
         const val = r.tribe_code?.trim();
         if (!val || seen.has(val)) continue;
@@ -141,7 +124,6 @@
       }
     }
 
-    // ====== LOAD + AGGREGATE QUESTIONS ======
     async function fetchQuestions() {
       const care = document.getElementById('care').value;
       const undrip = document.getElementById('undrip').value;
@@ -149,11 +131,10 @@
       const q = document.getElementById('search').value.trim();
 
       const params = {
-        select: 'question_number,section,subsection,question_text,care_principal,undrip,answer,tribe_code',
+        select: 'question_number,section,subsection,question_text,care_principal,undrip,answer,tribe_code,final_justification',
         order: 'question_number.asc'
       };
 
-      // Keyword search
       if (q) {
         const cleaned = q.replace(/[%*]/g, '').trim();
         const term = `*${cleaned}*`;
@@ -170,7 +151,6 @@
       }
 
       const res = await api('/rest/v1/questions_long', params);
-      if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
 
       const byQ = new Map();
@@ -190,22 +170,31 @@
             undrip: r.undrip,
             yes: 0,
             total: 0,
-            yesTribes: []
+            yesTribes: [],
+            justifications: []
           });
         }
+
         if (r.answer === true) {
-          byQ.get(key).yes += 1;
-          if (r.tribe_code) byQ.get(key).yesTribes.push(r.tribe_code);
+          byQ.get(key).yes++;
+          if (r.tribe_code) {
+            byQ.get(key).yesTribes.push(r.tribe_code);
+            if (r.final_justification) {
+              byQ.get(key).justifications.push({
+                tribe_code: r.tribe_code,
+                text: r.final_justification
+              });
+            }
+          }
         }
-        if (r.answer === true || r.answer === false) byQ.get(key).total += 1;
+        if (r.answer === true || r.answer === false) byQ.get(key).total++;
       }
 
-      const rowsAgg = Array.from(byQ.values()).sort((a,b) => (a.question_number || 0) - (b.question_number || 0));
+      const rowsAgg = Array.from(byQ.values()).sort((a,b) => a.question_number - b.question_number);
       document.getElementById('count').textContent = `${rowsAgg.length} question(s)`;
       renderRowsAggregated(rowsAgg);
     }
 
-    // ====== RENDER TABLE ======
     function renderRowsAggregated(rows) {
       const tbody = document.getElementById('rows');
       if (!rows.length) {
@@ -213,49 +202,35 @@
         return;
       }
 
-      const careMap = {
-        C: "Collective Benefit",
-        A: "Authority to Control",
-        R: "Responsibility",
-        E: "Ethics"
-      };
-      const undripMap = {
-        I: "Internal Autonomy",
-        C: "Collective Authority",
-        E: "External Participation"
-      };
-      const tribeMap = {
-        tribe_a: "A",
-        tribe_b: "B",
-        tribe_c: "C",
-        tribe_d: "D",
-        tribe_e: "E"
-      };
+      const careMap = { C: "Collective Benefit", A: "Authority to Control", R: "Responsibility", E: "Ethics" };
+      const undripMap = { I: "Internal Autonomy", C: "Collective Authority", E: "External Participation" };
+      const tribeMap = { tribe_a: "A", tribe_b: "B", tribe_c: "C", tribe_d: "D", tribe_e: "E" };
 
       tbody.innerHTML = rows.map(r => {
         const careExpanded = r.care_principal
-          ? r.care_principal
-              .split(',')
-              .map(c => `<span class="label care">${careMap[c.trim()] || c}</span>`)
-              .join(' ')
+          ? r.care_principal.split(',').map(c => `<span class="label care">${careMap[c.trim()] || c}</span>`).join(' ')
           : '<span class="meta">—</span>';
 
         const undripExpanded = r.undrip
-          ? r.undrip
-              .split(',')
-              .map(u => `<span class="label undrip">${undripMap[u.trim()] || u}</span>`)
-              .join(' ')
+          ? r.undrip.split(',').map(u => `<span class="label undrip">${undripMap[u.trim()] || u}</span>`).join(' ')
           : '<span class="meta">—</span>';
 
         const percent = r.total > 0 ? ((r.yes / r.total) * 100).toFixed(1) : 0;
 
         const tribes = r.yesTribes?.length
           ? Array.from(new Set(r.yesTribes))
-              .map(t => tribeMap[t.toLowerCase()] || t)
-              .sort()
-              .map(t => `<span class="tag">${t}</span>`)
+              .map(t => `<span class="tag">${tribeMap[t.toLowerCase()] || t}</span>`)
               .join(' ')
           : '<span class="meta">—</span>';
+
+        const justifications = r.justifications.length
+          ? r.justifications.map(j => `
+              <div class="justification">
+                <strong>${tribeMap[j.tribe_code] || j.tribe_code}:</strong>
+                <span>${j.text}</span>
+              </div>
+            `).join('')
+          : '<span class="meta">No justifications yet.</span>';
 
         return `
           <tr>
@@ -271,20 +246,24 @@
               <div class="yes-fraction">${r.yes} / ${r.total || 0}</div>
               <div class="yes-percent meta">${percent}%</div>
             </td>
-            <td>${tribes}</td>
+            <td>
+              ${tribes}
+              <details class="just-details">
+                <summary>View Justifications</summary>
+                ${justifications}
+              </details>
+            </td>
           </tr>
         `;
       }).join('');
     }
 
-    // ====== WIRE UI ======
     document.getElementById('apply').addEventListener('click', fetchQuestions);
     document.getElementById('care').addEventListener('change', fetchQuestions);
     document.getElementById('undrip').addEventListener('change', fetchQuestions);
     document.getElementById('tribe').addEventListener('change', fetchQuestions);
     document.getElementById('search').addEventListener('keydown', e => { if (e.key === 'Enter') fetchQuestions(); });
 
-    // ====== INIT ======
     (async function init(){
       await loadTribesWithYes();
       await fetchQuestions();
