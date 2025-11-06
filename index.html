@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Trial Tribal Dataset v1.4</title>
+  <title>Trial Tribal Dataset v1.5</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -135,19 +135,23 @@
         order: 'question_number.asc'
       };
 
-      if (q) {
-        const cleaned = q.replace(/[%*]/g, '').trim();
-        const term = `*${cleaned}*`;
-        const ors = [
-          `question_text.ilike.${term}`,
-          `section.ilike.${term}`,
-          `subsection.ilike.${term}`,
-          `care_principal.ilike.${term}`,
-          `undrip.ilike.${term}`,
-          `tribe_code.ilike.${term}`
-        ];
-        if (/^\d+$/.test(cleaned)) ors.push(`question_number.eq.${cleaned}`);
-        params.or = `(${ors.join(",")})`;
+      // ✅ Only apply filters if something is selected
+      if (care || undrip || tribe || q) {
+        const ors = [];
+        if (q) {
+          const cleaned = q.replace(/[%*]/g, '').trim();
+          const term = `*${cleaned}*`;
+          ors.push(
+            `question_text.ilike.${term}`,
+            `section.ilike.${term}`,
+            `subsection.ilike.${term}`,
+            `care_principal.ilike.${term}`,
+            `undrip.ilike.${term}`,
+            `tribe_code.ilike.${term}`
+          );
+          if (/^\d+$/.test(cleaned)) ors.push(`question_number.eq.${cleaned}`);
+          params.or = `(${ors.join(",")})`;
+        }
       }
 
       const res = await api('/rest/v1/questions_long', params);
@@ -176,22 +180,25 @@
         }
 
         if (r.answer === true) {
-          byQ.get(key).yes++;
+          const entry = byQ.get(key);
+          entry.yes++;
+          entry.total++;
           if (r.tribe_code) {
-            byQ.get(key).yesTribes.push(r.tribe_code);
+            entry.yesTribes.push(r.tribe_code);
             if (r.final_justification) {
-              byQ.get(key).justifications.push({
+              entry.justifications.push({
                 tribe_code: r.tribe_code,
                 text: r.final_justification
               });
             }
           }
+        } else if (r.answer === false) {
+          byQ.get(key).total++;
         }
-        if (r.answer === true || r.answer === false) byQ.get(key).total++;
       }
 
       const rowsAgg = Array.from(byQ.values()).sort((a,b) => a.question_number - b.question_number);
-      document.getElementById('count').textContent = `${rowsAgg.length} question(s)`;
+      document.getElementById('count').textContent = `${rowsAgg.length} question(s) loaded`;
       renderRowsAggregated(rowsAgg);
     }
 
@@ -224,12 +231,16 @@
           : '<span class="meta">—</span>';
 
         const justifications = r.justifications.length
-          ? r.justifications.map(j => `
-              <div class="justification">
-                <strong>${tribeMap[j.tribe_code] || j.tribe_code}:</strong>
-                <span>${j.text}</span>
-              </div>
-            `).join('')
+          ? `
+            <div class="just-list">
+              ${r.justifications.map(j => `
+                <div class="just-item">
+                  <div class="just-tribe">${tribeMap[j.tribe_code] || j.tribe_code}</div>
+                  <div class="just-text">${j.text}</div>
+                </div>
+              `).join('')}
+            </div>
+          `
           : '<span class="meta">No justifications yet.</span>';
 
         return `
@@ -249,7 +260,7 @@
             <td>
               ${tribes}
               <details class="just-details">
-                <summary>View Justifications</summary>
+                <summary>View ${r.justifications.length || 'No'} Justification${r.justifications.length !== 1 ? 's' : ''}</summary>
                 ${justifications}
               </details>
             </td>
@@ -266,7 +277,7 @@
 
     (async function init(){
       await loadTribesWithYes();
-      await fetchQuestions();
+      await fetchQuestions(); // ✅ auto-load all data on open
     })();
   </script>
 </body>
